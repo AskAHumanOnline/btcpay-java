@@ -1,0 +1,169 @@
+name: Claude Code Review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review, reopened]
+
+jobs:
+  claude-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
+
+  security-scan:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: read
+      id-token: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run Security Scan
+        id: security-scan
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are a senior security engineer specialising in Java cryptography libraries, BTCPay Server integrations, Lightning Network payments, and webhook security. Your task is to perform a thorough security review of this pull request.
+
+            **PR:** ${{ github.repository }}/pull/${{ github.event.pull_request.number }}
+            **Branch:** `${{ github.head_ref }}` → `${{ github.base_ref }}`
+
+            ## How to Review
+
+            1. Use `gh pr diff ${{ github.event.pull_request.number }}` to get the full diff.
+            2. Use `gh pr view ${{ github.event.pull_request.number }} --json files` to list changed files.
+            3. For every changed file, **read the full file** — not just the diff lines. Security issues often arise from the interaction between new code and existing context.
+            4. When a changed file touches `BTCPayWebhookValidator`, also read `BTCPayClient.java` to verify the integration contract.
+            5. When a changed file touches `BTCPayClient`, also read `BTCPayException.java` to verify error information is not over-exposed.
+            6. When a changed file touches the Spring Boot starter, also read `BTCPayAutoConfiguration.java` and `BTCPayProperties.java` to verify conditional wiring is correct and secrets are not exposed.
+
+            ## Checks to Run on Every Changed File
+
+            ### 1. OWASP Top 10
+            - Injection: command injection in path or URL construction; EL/SpEL injection
+            - Sensitive data exposure: API keys, webhook secrets, or response bodies in logs (any level, including DEBUG/TRACE) or exception messages
+            - XXE in any XML parsing paths
+            - Insecure deserialization of untrusted data (Jackson, ObjectMapper configuration)
+            - SSRF via unvalidated or caller-controlled URLs (BTCPay host, store ID in URL construction)
+            - Vulnerable/outdated dependency versions in `pom.xml` changes
+
+            ### 2. Library API Surface
+            - Unintentionally public classes or methods that expose internal state
+            - Mutable objects returned from public API without defensive copy
+            - Missing null guards on public API boundaries (library callers may pass null)
+            - Checked vs unchecked exception contracts — library callers should be forced to handle errors
+            - New public methods that could be misused or combined insecurely by downstream consumers
+
+            ### 3. Webhook Signature Validation
+            - **Constant-time comparison**: HMAC comparison must use `MessageDigest.isEqual()`, never `String.equals()` or `Arrays.equals()` with early exit
+            - **Raw bytes requirement**: HMAC must be computed over the raw request body bytes — never over re-serialized JSON (re-serialisation changes byte order, whitespace, or field ordering)
+            - **Header presence check**: missing or null `BTCPay-Sig` header must return false immediately
+            - **Prefix check**: header must start with exactly `sha256=` — no other prefix accepted
+            - **Empty/null secret**: empty or null webhook secret must not validate any signature
+            - **Multi-secret rotation**: `List<String>` overload must iterate all secrets without short-circuiting on the first valid one in a timing-observable way (advisory — current per-secret constant-time comparison is the baseline)
+            - **Null rawBody**: `mac.doFinal(null)` throws `NullPointerException` — must be caught and return false, not propagate
+
+            ### 4. BTCPay API Client Security
+            - **API key in logs**: the `Authorization: Token <key>` header value must never appear in log output at any level; verify all `log.*` calls use `[REDACTED]`
+            - **Response body exposure**: `BTCPayException.getMessage()` must truncate raw response bodies; the full body must only be accessible via `getResponseBody()` with Javadoc warning
+            - **URL construction**: store ID, invoice ID, and other path segments must not allow path traversal (e.g., `../` in a caller-supplied store ID)
+            - **Timeouts**: `HttpClient` must have explicit connect and read timeouts to prevent DoS via slow BTCPay responses
+            - **Thread safety**: `BTCPayClient` is designed as a shared singleton — verify `ObjectMapper` and `HttpClient` are used in a thread-safe manner
+            - **InterruptedException**: must re-interrupt the thread (`Thread.currentThread().interrupt()`) before returning false in `isConnected`
+
+            ### 5. Two-Phase Invoice Creation
+            - Callers must be able to recover the BTCPay invoice ID if `getLightningPaymentMethod` fails after `createStoreInvoice` succeeds
+            - Any change to the two-phase flow must maintain the safety guarantee: the invoice ID is the durable reference, and fetching the payment method is idempotently retryable
+
+            ### 6. Spring Boot Auto-Configuration Security
+            - `@ConditionalOnProperty` gates must be correct — activation on `btcpay.host` only, not on the presence of the API key (missing API key should fail at bean creation time with a clear error)
+            - Auto-configured beans must not expose `BTCPayProperties` fields (including `apiKey` and `webhookSecret`) via Actuator endpoints
+            - Missing `@ConditionalOnMissingBean` allowing consumer configuration to be silently overridden
+
+            ### 7. Secrets & Credentials
+            - Hardcoded API keys, webhook secrets, or test credentials in source code
+            - Secrets logged at any level (DEBUG and TRACE included)
+            - Unsafe default values in `BTCPayProperties` (empty string defaults for security-critical fields)
+            - Test fixtures containing real-looking API keys or webhook secrets
+
+            ### 8. Input Validation
+            - Integer overflow in satoshi arithmetic — use `long`, not `int`
+            - Missing null checks on `bolt11` parameter in `payLightningInvoice`
+            - Missing validation of store ID or invoice ID format before use in URL path construction
+
+            ### 9. Race Conditions & Concurrency
+            - Non-atomic operations on shared state in the client
+            - `ObjectMapper` configured with non-thread-safe options after construction
+
+            ## Severity Scale
+
+            | Severity | Criteria |
+            |----------|----------|
+            | CRITICAL | Exploitable without auth; funds at risk, signature bypass, or API key leak |
+            | HIGH     | Exploitable under specific conditions; protocol correctness broken |
+            | MEDIUM   | Defence-in-depth weakness; indirect or chained risk |
+            | LOW      | Best-practice deviation; negligible direct impact |
+            | INFO     | Observation or hardening suggestion; no direct security impact |
+
+            ## Output Format
+
+            Post your findings as a PR comment using this exact structure:
+
+            ```
+            ## Security Review
+
+            ### Summary
+            <One paragraph: what this PR does, overall risk assessment, any patterns of concern.>
+
+            ### Findings
+
+            #### [SEVERITY] Short Title
+            **File:** `path/to/File.java:line`
+            **Description:** What the vulnerability is, why it matters, and how it could be exploited.
+            **Recommendation:** Specific fix with a concise code example where helpful.
+
+            ---
+
+            ### Verdict
+            APPROVED | CHANGES REQUESTED
+            ```
+
+            If there are no findings:
+            ```
+            ## Security Review
+
+            ### Summary
+            <Brief description of what was reviewed.>
+
+            No security issues found. ✅
+
+            ### Verdict
+            APPROVED
+            ```
+
+            Always post the comment — even when there are no findings.
