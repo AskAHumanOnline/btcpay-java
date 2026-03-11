@@ -136,12 +136,16 @@ class BTCPayClientTest {
     void payLightningInvoice_success() {
         wireMock.stubFor(post(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/lightning/BTC/invoices/pay"))
                 .willReturn(okJson("""
-                        {"result":"ok"}
+                        {"paymentHash":"abc123def","status":"complete","totalAmount":"25","feeAmount":"1","BOLT11":"lnbc250n1pjtest..."}
                         """)));
 
         LightningPaymentResult result = client.payLightningInvoice(STORE_ID, "lnbc250n1pjtest...");
 
-        assertThat(result.getResult()).isEqualTo("ok");
+        assertThat(result.getPaymentHash()).isEqualTo("abc123def");
+        assertThat(result.getStatus()).isEqualTo("complete");
+        assertThat(result.getTotalAmount()).isEqualTo("25");
+        assertThat(result.getFeeAmount()).isEqualTo("1");
+        assertThat(result.getBolt11()).isEqualTo("lnbc250n1pjtest...");
     }
 
     @Test
@@ -260,14 +264,52 @@ class BTCPayClientTest {
         wireMock.stubFor(post(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/lightning/BTC/invoices/pay"))
                 .withRequestBody(matchingJsonPath("$.BOLT11"))
                 .willReturn(okJson("""
-                        {"result":"ok"}
+                        {"paymentHash":"abc123def","status":"complete","totalAmount":"25","feeAmount":"1","BOLT11":"lnbc250n1pjtest..."}
                         """)));
 
         LightningPaymentResult result = client.payLightningInvoice(STORE_ID, "lnbc250n1pjtest...");
-        assertThat(result.getResult()).isEqualTo("ok");
+        assertThat(result.getStatus()).isEqualTo("complete");
 
         wireMock.verify(postRequestedFor(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/lightning/BTC/invoices/pay"))
                 .withRequestBody(matchingJsonPath("$.BOLT11", equalTo("lnbc250n1pjtest..."))));
+    }
+
+    @Test
+    void noArgOverloads_useConfiguredStoreId() {
+        BTCPayClient clientWithStore = new BTCPayClient(
+                "http://localhost:" + wireMock.getPort(), API_KEY, STORE_ID, 3, 5);
+
+        wireMock.stubFor(get(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/invoices/" + INVOICE_ID))
+                .willReturn(okJson("""
+                        {"id":"%s","status":"Settled","amount":"25","currency":"SATS"}
+                        """.formatted(INVOICE_ID))));
+
+        assertThat(clientWithStore.isInvoicePaid(INVOICE_ID)).isTrue();
+    }
+
+    @Test
+    void noArgOverload_throwsIllegalState_whenNoStoreIdConfigured() {
+        // client was built without a storeId
+        assertThatThrownBy(() -> client.isInvoicePaid(INVOICE_ID))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("storeId");
+    }
+
+    @Test
+    void configuredStoreId_createInvoice_noArgOverload() {
+        BTCPayClient clientWithStore = new BTCPayClient(
+                "http://localhost:" + wireMock.getPort(), API_KEY, STORE_ID, 3, 5);
+
+        wireMock.stubFor(post(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/invoices"))
+                .willReturn(okJson("""
+                        {"id":"abc123","status":"New","amount":"25","currency":"SATS"}
+                        """)));
+
+        CreateInvoiceRequest request = new CreateInvoiceRequest();
+        request.setAmount(25);
+        StoreInvoice invoice = clientWithStore.createStoreInvoice(request);
+
+        assertThat(invoice.getId()).isEqualTo("abc123");
     }
 
     @Test

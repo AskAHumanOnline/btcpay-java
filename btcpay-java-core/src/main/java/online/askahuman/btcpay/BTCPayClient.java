@@ -31,6 +31,10 @@ import java.util.Optional;
  * thread-safe after construction, and all fields are immutable (final). Instances may
  * be shared freely across threads without external synchronization.</p>
  *
+ * <p><strong>Configurable store ID:</strong> A default store ID can be set at construction
+ * time, enabling the no-arg overloads (e.g., {@link #createStoreInvoice(CreateInvoiceRequest)}).
+ * The explicit {@code storeId} overloads remain available for multi-store use cases.</p>
+ *
  * <p><strong>Two-phase invoice creation:</strong> Creating a Lightning invoice requires
  * two API calls — {@link #createStoreInvoice} followed by {@link #getLightningPaymentMethod}.
  * The BTCPay invoice ID returned by {@code createStoreInvoice} is the durable external
@@ -39,17 +43,18 @@ import java.util.Optional;
  * exists in BTCPay and can be recovered by retrying {@link #getInvoicePaymentMethods}
  * with the stored ID.</p>
  *
- * <p>Example usage:</p>
+ * <p>Example usage with a configured store ID:</p>
  * <pre>{@code
- * BTCPayClient client = new BTCPayClient("https://btcpay.example.com", "your-api-key");
+ * BTCPayClient client = new BTCPayClient(
+ *     "https://btcpay.example.com", "your-api-key", "your-store-id");
  *
  * CreateInvoiceRequest request = new CreateInvoiceRequest();
- * request.setAmount(25);
- * StoreInvoice invoice = client.createStoreInvoice("your-store-id", request);
+ * request.setAmount(25L);
+ * StoreInvoice invoice = client.createStoreInvoice(request);
  * // persist invoice.getId() before the next call
  *
  * Optional<InvoicePaymentMethod> lightning =
- *     client.getLightningPaymentMethod("your-store-id", invoice.getId());
+ *     client.getLightningPaymentMethod(invoice.getId());
  * }</pre>
  */
 public class BTCPayClient {
@@ -58,22 +63,26 @@ public class BTCPayClient {
 
     private final String host;
     private final String apiKey;
+    private final String storeId;
     private final Duration readTimeout;
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
 
     /**
-     * Creates a new BTCPay client with the specified connection parameters.
+     * Creates a new BTCPay client with a configured store ID and explicit timeouts.
      *
      * @param host                  BTCPay Server hostname or URL (e.g., "btcpay.example.com"
      *                              or "https://btcpay.example.com")
      * @param apiKey                Greenfield API key
+     * @param storeId               default store ID used by the no-arg method overloads;
+     *                              may be {@code null} if you always supply it explicitly
      * @param connectTimeoutSeconds connection timeout in seconds
      * @param readTimeoutSeconds    read (request) timeout in seconds
      * @throws NullPointerException     if host or apiKey is null
      * @throws IllegalArgumentException if timeouts are not positive
      */
-    public BTCPayClient(String host, String apiKey, int connectTimeoutSeconds, int readTimeoutSeconds) {
+    public BTCPayClient(String host, String apiKey, String storeId,
+                        int connectTimeoutSeconds, int readTimeoutSeconds) {
         Objects.requireNonNull(host, "host must not be null");
         Objects.requireNonNull(apiKey, "apiKey must not be null");
         if (connectTimeoutSeconds <= 0) {
@@ -84,6 +93,7 @@ public class BTCPayClient {
         }
         this.host = host.startsWith("http") ? host : "https://" + host;
         this.apiKey = apiKey;
+        this.storeId = storeId;
         this.readTimeout = Duration.ofSeconds(readTimeoutSeconds);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
@@ -92,14 +102,136 @@ public class BTCPayClient {
     }
 
     /**
-     * Creates a new BTCPay client with default timeouts (3s connect, 5s read).
+     * Creates a new BTCPay client with a configured store ID and default timeouts (3s connect, 5s read).
+     *
+     * @param host    BTCPay Server hostname or URL
+     * @param apiKey  Greenfield API key
+     * @param storeId default store ID used by the no-arg method overloads
+     */
+    public BTCPayClient(String host, String apiKey, String storeId) {
+        this(host, apiKey, storeId, 3, 5);
+    }
+
+    /**
+     * Creates a new BTCPay client without a configured store ID and with explicit timeouts.
+     * All method calls must supply a {@code storeId} explicitly.
+     *
+     * @param host                  BTCPay Server hostname or URL
+     * @param apiKey                Greenfield API key
+     * @param connectTimeoutSeconds connection timeout in seconds
+     * @param readTimeoutSeconds    read (request) timeout in seconds
+     */
+    public BTCPayClient(String host, String apiKey, int connectTimeoutSeconds, int readTimeoutSeconds) {
+        this(host, apiKey, null, connectTimeoutSeconds, readTimeoutSeconds);
+    }
+
+    /**
+     * Creates a new BTCPay client without a configured store ID and default timeouts (3s connect, 5s read).
+     * All method calls must supply a {@code storeId} explicitly.
      *
      * @param host   BTCPay Server hostname or URL
      * @param apiKey Greenfield API key
      */
     public BTCPayClient(String host, String apiKey) {
-        this(host, apiKey, 3, 5);
+        this(host, apiKey, null, 3, 5);
     }
+
+    // -------------------------------------------------------------------------
+    // No-arg overloads (use the configured storeId)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Creates a store invoice using the configured store ID.
+     *
+     * @param request invoice creation parameters
+     * @return the created invoice
+     * @throws IllegalStateException if no store ID was configured at construction time
+     * @throws BTCPayException       if the API returns an error
+     * @see #createStoreInvoice(String, CreateInvoiceRequest)
+     */
+    public StoreInvoice createStoreInvoice(CreateInvoiceRequest request) {
+        return createStoreInvoice(requireStoreId(), request);
+    }
+
+    /**
+     * Returns all payment methods for an invoice using the configured store ID.
+     *
+     * @param invoiceId the BTCPay invoice ID
+     * @return list of payment methods
+     * @throws IllegalStateException if no store ID was configured at construction time
+     * @throws BTCPayException       if the API returns an error
+     * @see #getInvoicePaymentMethods(String, String)
+     */
+    public List<InvoicePaymentMethod> getInvoicePaymentMethods(String invoiceId) {
+        return getInvoicePaymentMethods(requireStoreId(), invoiceId);
+    }
+
+    /**
+     * Returns the Lightning payment method for an invoice using the configured store ID.
+     *
+     * @param invoiceId the BTCPay invoice ID
+     * @return Lightning payment method, or empty if none exists
+     * @throws IllegalStateException if no store ID was configured at construction time
+     * @throws BTCPayException       if the API returns an error
+     * @see #getLightningPaymentMethod(String, String)
+     */
+    public Optional<InvoicePaymentMethod> getLightningPaymentMethod(String invoiceId) {
+        return getLightningPaymentMethod(requireStoreId(), invoiceId);
+    }
+
+    /**
+     * Returns the invoice by ID using the configured store ID.
+     *
+     * @param invoiceId the BTCPay invoice ID
+     * @return the invoice
+     * @throws IllegalStateException if no store ID was configured at construction time
+     * @throws BTCPayException       if the API returns an error
+     * @see #getInvoice(String, String)
+     */
+    public StoreInvoice getInvoice(String invoiceId) {
+        return getInvoice(requireStoreId(), invoiceId);
+    }
+
+    /**
+     * Returns true if the invoice has status {@link InvoiceStatus#SETTLED}, using the configured store ID.
+     *
+     * @param invoiceId the BTCPay invoice ID
+     * @return true if paid and settled
+     * @throws IllegalStateException if no store ID was configured at construction time
+     * @throws BTCPayException       if the API returns an error
+     * @see #isInvoicePaid(String, String)
+     */
+    public boolean isInvoicePaid(String invoiceId) {
+        return isInvoicePaid(requireStoreId(), invoiceId);
+    }
+
+    /**
+     * Pays a Lightning invoice using the configured store ID.
+     *
+     * @param bolt11 the BOLT11 invoice to pay
+     * @return the payment result
+     * @throws IllegalStateException if no store ID was configured at construction time
+     * @throws BTCPayException       if the payment fails or the API returns an error
+     * @see #payLightningInvoice(String, String)
+     */
+    public LightningPaymentResult payLightningInvoice(String bolt11) {
+        return payLightningInvoice(requireStoreId(), bolt11);
+    }
+
+    /**
+     * Checks Lightning node connectivity using the configured store ID.
+     *
+     * @return true if the server responds with HTTP 200; false if unreachable or error
+     * @throws IllegalStateException if no store ID was configured at construction time
+     * @see #isConnected(String)
+     */
+    public boolean isConnected() {
+        return isConnected(requireStoreId());
+    }
+
+    // -------------------------------------------------------------------------
+    // Explicit storeId overloads (multi-store and backward-compatible)
+    // -------------------------------------------------------------------------
 
     /**
      * Creates a store invoice via the Greenfield API.
@@ -276,6 +408,19 @@ public class BTCPayClient {
             log.log(System.Logger.Level.WARNING, "BTCPay Server connectivity check failed: {0}", e.getMessage());
             return false;
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Internal helpers
+    // -------------------------------------------------------------------------
+
+    private String requireStoreId() {
+        if (storeId == null) {
+            throw new IllegalStateException(
+                    "No storeId configured on this BTCPayClient. " +
+                    "Either construct the client with a storeId, or use the explicit storeId overload.");
+        }
+        return storeId;
     }
 
     private HttpRequest.Builder authorizedRequest(URI uri) {

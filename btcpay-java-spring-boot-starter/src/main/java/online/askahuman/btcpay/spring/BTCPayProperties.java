@@ -11,6 +11,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * btcpay:
  *   host: https://btcpay.example.com
  *   api-key: ${BTCPAY_API_KEY}
+ *   store-id: ${BTCPAY_STORE_ID}
  *   webhook-secret: ${BTCPAY_WEBHOOK_SECRET}
  *   connect-timeout-seconds: 3
  *   read-timeout-seconds: 5
@@ -28,6 +29,12 @@ public class BTCPayProperties {
      * BTCPay Server API key with createinvoice + viewinvoices + sendlightning permissions.
      */
     private String apiKey;
+
+    /**
+     * Default BTCPay store ID. When set, enables the no-arg method overloads on
+     * {@link online.askahuman.btcpay.BTCPayClient} (e.g., {@code createStoreInvoice(request)}).
+     */
+    private String storeId;
 
     /**
      * Optional webhook secret for validating BTCPay webhook signatures.
@@ -78,6 +85,24 @@ public class BTCPayProperties {
      */
     public void setApiKey(String apiKey) {
         this.apiKey = apiKey;
+    }
+
+    /**
+     * Returns the default store ID.
+     *
+     * @return the store ID, or null if not configured
+     */
+    public String getStoreId() {
+        return storeId;
+    }
+
+    /**
+     * Sets the default store ID.
+     *
+     * @param storeId the store ID
+     */
+    public void setStoreId(String storeId) {
+        this.storeId = storeId;
     }
 
     /**

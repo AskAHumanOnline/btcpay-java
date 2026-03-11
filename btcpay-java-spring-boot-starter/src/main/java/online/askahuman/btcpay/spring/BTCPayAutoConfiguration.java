@@ -31,6 +31,7 @@ public class BTCPayAutoConfiguration {
         return new BTCPayClient(
                 props.getHost(),
                 props.getApiKey(),
+                props.getStoreId(),
                 props.getConnectTimeoutSeconds(),
                 props.getReadTimeoutSeconds());
     }

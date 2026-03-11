@@ -30,22 +30,22 @@ public class BasicUsageExample {
      * @param args command-line arguments (unused)
      */
     public static void main(String[] args) {
-        // --- 1. Create a BTCPayClient ---
-        // Replace with your BTCPay Server host and API key
+        // --- 1. Create a BTCPayClient with a configured store ID ---
+        // Supplying storeId here enables the no-arg convenience overloads below.
+        // Replace with your actual BTCPay Server configuration.
         BTCPayClient client = new BTCPayClient(
                 "https://your-btcpay-host.example.com",
-                "your-api-key"
+                "your-api-key",
+                "your-store-id"
         );
 
-        String storeId = "your-store-id";
-
-        // --- 2. Create an invoice ---
+        // --- 2. Create an invoice (no storeId needed — uses the configured one) ---
         CreateInvoiceRequest request = new CreateInvoiceRequest();
-        request.setAmount(25);                          // 25 satoshis
+        request.setAmount(25L);                         // 25 satoshis (long convenience overload)
         request.setOrderId("order-12345");              // optional: for your tracking
         request.setDescription("Payment for service");  // optional: shown at checkout
 
-        StoreInvoice invoice = client.createStoreInvoice(storeId, request);
+        StoreInvoice invoice = client.createStoreInvoice(request);
 
         // The BTCPay invoice ID (e.g., "GjBd5TtU5VsEBVBNmRmANy")
         // This is NOT the Lightning payment hash — store it as your external reference
@@ -54,7 +54,7 @@ public class BasicUsageExample {
         System.out.println("Status: " + invoice.getStatus());
 
         // --- 3. Get the Lightning payment method ---
-        Optional<InvoicePaymentMethod> lightning = client.getLightningPaymentMethod(storeId, externalInvoiceId);
+        Optional<InvoicePaymentMethod> lightning = client.getLightningPaymentMethod(externalInvoiceId);
 
         if (lightning.isPresent()) {
             // The BOLT11 invoice string — give this to the payer
@@ -66,7 +66,7 @@ public class BasicUsageExample {
         }
 
         // --- 4. Check if invoice is paid ---
-        boolean paid = client.isInvoicePaid(storeId, externalInvoiceId);
+        boolean paid = client.isInvoicePaid(externalInvoiceId);
         System.out.println("Invoice paid: " + paid);
 
         // --- 5. Validate a webhook signature ---

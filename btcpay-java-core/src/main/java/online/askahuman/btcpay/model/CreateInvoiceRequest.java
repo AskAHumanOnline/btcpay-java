@@ -25,7 +25,7 @@ import java.util.Map;
 public class CreateInvoiceRequest {
 
     @JsonProperty("amount")
-    private long amount;
+    private String amount;
 
     @JsonProperty("currency")
     private String currency = "SATS";
@@ -34,21 +34,32 @@ public class CreateInvoiceRequest {
     private String description;
 
     /**
-     * Returns the invoice amount in the specified currency (default: satoshis).
+     * Returns the invoice amount as a string.
      *
      * @return the amount
      */
-    public long getAmount() {
+    public String getAmount() {
         return amount;
     }
 
     /**
-     * Sets the invoice amount.
+     * Sets the invoice amount as a string (e.g., "25" or "0.001").
+     * The BTCPay Greenfield API expects {@code amount} as a JSON string.
+     *
+     * @param amount the amount in the specified currency (default: satoshis)
+     */
+    public void setAmount(String amount) {
+        this.amount = amount;
+    }
+
+    /**
+     * Sets the invoice amount from a long value.
+     * Convenience overload that converts to string before setting.
      *
      * @param amount the amount in the specified currency (default: satoshis)
      */
     public void setAmount(long amount) {
-        this.amount = amount;
+        this.amount = String.valueOf(amount);
     }
 
     /**
