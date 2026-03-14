@@ -95,8 +95,11 @@ public class BTCPayClient {
         this.apiKey = apiKey;
         this.storeId = storeId;
         this.readTimeout = Duration.ofSeconds(readTimeoutSeconds);
+        // Use HTTP/1.1 for plain http:// (h2c is rarely supported); allow HTTP/2 negotiation over TLS.
+        boolean plainHttp = this.host.startsWith("http://");
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(connectTimeoutSeconds))
+                .version(plainHttp ? HttpClient.Version.HTTP_1_1 : HttpClient.Version.HTTP_2)
                 .build();
         this.objectMapper = new ObjectMapper();
     }
@@ -311,7 +314,8 @@ public class BTCPayClient {
      */
     public Optional<InvoicePaymentMethod> getLightningPaymentMethod(String storeId, String invoiceId) {
         return getInvoicePaymentMethods(storeId, invoiceId).stream()
-                .filter(m -> "LightningLike".equals(m.getPaymentType()) && "BTC".equals(m.getCryptoCode()))
+                .filter(m -> "BTC-LN".equals(m.getPaymentMethodId())
+                        || ("LightningLike".equals(m.getPaymentType()) && "BTC".equals(m.getCryptoCode())))
                 .findFirst();
     }
 
