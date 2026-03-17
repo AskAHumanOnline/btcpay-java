@@ -3,6 +3,7 @@ package online.askahuman.btcpay;
 import com.github.tomakehurst.wiremock.junit5.WireMockExtension;
 import online.askahuman.btcpay.model.CreateInvoiceRequest;
 import online.askahuman.btcpay.model.InvoicePaymentMethod;
+import online.askahuman.btcpay.model.LightningPayment;
 import online.askahuman.btcpay.model.LightningPaymentResult;
 import online.askahuman.btcpay.model.StoreInvoice;
 import org.junit.jupiter.api.BeforeEach;
@@ -310,6 +311,53 @@ class BTCPayClientTest {
         StoreInvoice invoice = clientWithStore.createStoreInvoice(request);
 
         assertThat(invoice.getId()).isEqualTo("abc123");
+    }
+
+    @Test
+    void getLightningPayment_complete_returnsPayment() {
+        String hash = "a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2";
+        wireMock.stubFor(get(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/lightning/BTC/payments/" + hash))
+                .willReturn(okJson("""
+                        {"id":"%s","status":"Complete"}
+                        """.formatted(hash))));
+
+        LightningPayment payment = client.getLightningPayment(STORE_ID, hash);
+
+        assertThat(payment.getPaymentHash()).isEqualTo(hash);
+        assertThat(payment.getStatus()).isEqualTo("Complete");
+    }
+
+    @Test
+    void getLightningPayment_processing_returnsPayment() {
+        String hash = "b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3";
+        wireMock.stubFor(get(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/lightning/BTC/payments/" + hash))
+                .willReturn(okJson("""
+                        {"id":"%s","status":"Processing"}
+                        """.formatted(hash))));
+
+        LightningPayment payment = client.getLightningPayment(STORE_ID, hash);
+
+        assertThat(payment.getPaymentHash()).isEqualTo(hash);
+        assertThat(payment.getStatus()).isEqualTo("Processing");
+    }
+
+    @Test
+    void getLightningPayment_notFound_throwsBTCPayException404() {
+        String hash = "c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4";
+        wireMock.stubFor(get(urlPathEqualTo("/api/v1/stores/" + STORE_ID + "/lightning/BTC/payments/" + hash))
+                .willReturn(aResponse().withStatus(404).withBody("Not Found")));
+
+        assertThatThrownBy(() -> client.getLightningPayment(STORE_ID, hash))
+                .isInstanceOf(BTCPayException.class)
+                .satisfies(ex -> assertThat(((BTCPayException) ex).getStatusCode()).isEqualTo(404));
+    }
+
+    @Test
+    void getLightningPayment_noStoreId_throwsIllegalState() {
+        // client was built without a storeId
+        assertThatThrownBy(() -> client.getLightningPayment("somehash"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("storeId");
     }
 
     @Test

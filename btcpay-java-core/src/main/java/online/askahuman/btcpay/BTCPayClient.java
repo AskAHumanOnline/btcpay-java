@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import online.askahuman.btcpay.model.CreateInvoiceRequest;
 import online.askahuman.btcpay.model.InvoicePaymentMethod;
 import online.askahuman.btcpay.model.InvoiceStatus;
+import online.askahuman.btcpay.model.LightningPayment;
 import online.askahuman.btcpay.model.LightningPaymentResult;
 import online.askahuman.btcpay.model.StoreInvoice;
 
@@ -232,6 +233,19 @@ public class BTCPayClient {
         return isConnected(requireStoreId());
     }
 
+    /**
+     * Gets the status of a Lightning payment by payment hash.
+     * Uses the configured default store ID.
+     *
+     * @param paymentHash hex-encoded payment hash
+     * @return LightningPayment with status (Unknown, Processing, Complete, Failed)
+     * @throws IllegalStateException if no store ID is configured
+     * @throws BTCPayException       if BTCPay returns 4xx/5xx (404 = payment not found)
+     */
+    public LightningPayment getLightningPayment(String paymentHash) {
+        return getLightningPayment(requireStoreId(), paymentHash);
+    }
+
     // -------------------------------------------------------------------------
     // Explicit storeId overloads (multi-store and backward-compatible)
     // -------------------------------------------------------------------------
@@ -382,6 +396,25 @@ public class BTCPayClient {
         } catch (Exception e) {
             throw new BTCPayException("Failed to serialize pay request: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Gets the status of a Lightning payment by payment hash for the given store.
+     *
+     * <p>Endpoint: {@code GET /api/v1/stores/{storeId}/lightning/BTC/payments/{paymentHash}}</p>
+     *
+     * @param storeId     BTCPay store ID
+     * @param paymentHash hex-encoded payment hash
+     * @return LightningPayment with status
+     * @throws BTCPayException if BTCPay returns 4xx/5xx (404 = payment not found)
+     */
+    public LightningPayment getLightningPayment(String storeId, String paymentHash) {
+        Objects.requireNonNull(storeId, "storeId must not be null");
+        Objects.requireNonNull(paymentHash, "paymentHash must not be null");
+        URI uri = URI.create(host + "/api/v1/stores/" + storeId + "/lightning/BTC/payments/" + paymentHash);
+        log.log(System.Logger.Level.DEBUG, "GET {0} Authorization: Token [REDACTED]", uri);
+        HttpRequest request = authorizedRequest(uri).GET().build();
+        return execute(request, LightningPayment.class);
     }
 
     /**
