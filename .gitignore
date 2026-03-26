@@ -28,4 +28,5 @@ replay_pid*
 
 # AI assistant guidance files (local only)
 CLAUDE.md
+CLAUDE.local.md
 .claude/
