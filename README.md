@@ -2,6 +2,8 @@
 
 Java library for the [BTCPay Server Greenfield API](https://docs.btcpayserver.org/API/Greenfield/v1/) -- invoice creation, Lightning payment, webhook signature validation, and a Spring Boot starter for auto-configuration.
 
+> **Built to power [AskAHuman](https://askahuman.online)** — a human verification marketplace where AI agents pay via Lightning to get answers from real people. Platform launching soon.
+
 ## Modules
 
 | Module | Description |
@@ -24,7 +26,7 @@ Java library for the [BTCPay Server Greenfield API](https://docs.btcpayserver.or
 <dependency>
     <groupId>online.askahuman</groupId>
     <artifactId>btcpay-java-core</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.3</version>
 </dependency>
 ```
 
@@ -34,7 +36,7 @@ Java library for the [BTCPay Server Greenfield API](https://docs.btcpayserver.or
 <dependency>
     <groupId>online.askahuman</groupId>
     <artifactId>btcpay-java-spring-boot-starter</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.3</version>
 </dependency>
 ```
 
