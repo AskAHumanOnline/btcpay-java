@@ -35,6 +35,11 @@ public class BTCPayWebhookValidator {
      * @return true if the signature is valid
      */
     public boolean isValidSignature(byte[] rawBody, String secret, String sigHeader) {
+        if (secret == null || secret.isEmpty()) {
+            // Fail fast on misconfiguration rather than silently swallowing the NPE/IAE
+            // that SecretKeySpec would otherwise raise inside the catch block below.
+            return false;
+        }
         if (sigHeader == null || !sigHeader.startsWith(SIG_PREFIX)) {
             return false;
         }
