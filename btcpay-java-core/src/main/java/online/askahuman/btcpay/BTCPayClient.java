@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.regex.Pattern;
 
 /**
  * Client for the BTCPay Server
@@ -62,6 +63,11 @@ public class BTCPayClient {
 
     private static final System.Logger log = System.getLogger(BTCPayClient.class.getName());
 
+    // BTCPay store/invoice IDs are base58-like; payment hashes are hex. The union is
+    // [A-Za-z0-9_-]+, rejecting '/', '..', '%', and any other character that could
+    // alter the resolved URL path.
+    private static final Pattern PATH_SEGMENT = Pattern.compile("[A-Za-z0-9_\\-]+");
+
     private final String host;
     private final String apiKey;
     private final String storeId;
@@ -91,6 +97,9 @@ public class BTCPayClient {
         }
         if (readTimeoutSeconds <= 0) {
             throw new IllegalArgumentException("readTimeoutSeconds must be positive");
+        }
+        if (storeId != null) {
+            validatePathSegment(storeId, "storeId");
         }
         this.host = host.startsWith("http") ? host : "https://" + host;
         this.apiKey = apiKey;
@@ -268,6 +277,7 @@ public class BTCPayClient {
     public StoreInvoice createStoreInvoice(String storeId, CreateInvoiceRequest request) {
         Objects.requireNonNull(storeId, "storeId must not be null");
         Objects.requireNonNull(request, "request must not be null");
+        validatePathSegment(storeId, "storeId");
 
         URI uri = URI.create(host + "/api/v1/stores/" + storeId + "/invoices");
         log.log(System.Logger.Level.DEBUG, "POST {0} Authorization: Token [REDACTED]", uri);
@@ -301,6 +311,8 @@ public class BTCPayClient {
     public List<InvoicePaymentMethod> getInvoicePaymentMethods(String storeId, String invoiceId) {
         Objects.requireNonNull(storeId, "storeId must not be null");
         Objects.requireNonNull(invoiceId, "invoiceId must not be null");
+        validatePathSegment(storeId, "storeId");
+        validatePathSegment(invoiceId, "invoiceId");
 
         URI uri = URI.create(host + "/api/v1/stores/" + storeId + "/invoices/" + invoiceId + "/payment-methods");
         log.log(System.Logger.Level.DEBUG, "GET {0} Authorization: Token [REDACTED]", uri);
@@ -346,6 +358,8 @@ public class BTCPayClient {
     public StoreInvoice getInvoice(String storeId, String invoiceId) {
         Objects.requireNonNull(storeId, "storeId must not be null");
         Objects.requireNonNull(invoiceId, "invoiceId must not be null");
+        validatePathSegment(storeId, "storeId");
+        validatePathSegment(invoiceId, "invoiceId");
 
         URI uri = URI.create(host + "/api/v1/stores/" + storeId + "/invoices/" + invoiceId);
         log.log(System.Logger.Level.DEBUG, "GET {0} Authorization: Token [REDACTED]", uri);
@@ -381,6 +395,7 @@ public class BTCPayClient {
     public LightningPaymentResult payLightningInvoice(String storeId, String bolt11) {
         Objects.requireNonNull(storeId, "storeId must not be null");
         Objects.requireNonNull(bolt11, "bolt11 must not be null");
+        validatePathSegment(storeId, "storeId");
 
         URI uri = URI.create(host + "/api/v1/stores/" + storeId + "/lightning/BTC/invoices/pay");
         log.log(System.Logger.Level.DEBUG, "POST {0} Authorization: Token [REDACTED]", uri);
@@ -411,6 +426,8 @@ public class BTCPayClient {
     public LightningPayment getLightningPayment(String storeId, String paymentHash) {
         Objects.requireNonNull(storeId, "storeId must not be null");
         Objects.requireNonNull(paymentHash, "paymentHash must not be null");
+        validatePathSegment(storeId, "storeId");
+        validatePathSegment(paymentHash, "paymentHash");
         URI uri = URI.create(host + "/api/v1/stores/" + storeId + "/lightning/BTC/payments/" + paymentHash);
         log.log(System.Logger.Level.DEBUG, "GET {0} Authorization: Token [REDACTED]", uri);
         HttpRequest request = authorizedRequest(uri).GET().build();
@@ -427,6 +444,7 @@ public class BTCPayClient {
      */
     public boolean isConnected(String storeId) {
         Objects.requireNonNull(storeId, "storeId must not be null");
+        validatePathSegment(storeId, "storeId");
 
         URI uri = URI.create(host + "/api/v1/stores/" + storeId + "/lightning/BTC/info");
         log.log(System.Logger.Level.DEBUG, "GET {0} Authorization: Token [REDACTED]", uri);
@@ -450,6 +468,21 @@ public class BTCPayClient {
     // -------------------------------------------------------------------------
     // Internal helpers
     // -------------------------------------------------------------------------
+
+    /**
+     * Rejects identifiers that could alter the URL path (path traversal, injected segments,
+     * percent-encoded separators). BTCPay store/invoice IDs and Lightning payment hashes all
+     * fit {@code [A-Za-z0-9_-]+}, so anything outside that range is treated as invalid input.
+     *
+     * @throws IllegalArgumentException if the value is empty or contains characters outside
+     *                                  {@code [A-Za-z0-9_-]}
+     */
+    private static void validatePathSegment(String value, String paramName) {
+        if (value == null || !PATH_SEGMENT.matcher(value).matches()) {
+            throw new IllegalArgumentException(
+                    paramName + " contains invalid characters: " + value);
+        }
+    }
 
     private String requireStoreId() {
         if (storeId == null) {
