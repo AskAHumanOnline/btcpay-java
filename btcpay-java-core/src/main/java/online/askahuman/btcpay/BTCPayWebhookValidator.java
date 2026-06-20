@@ -55,6 +55,9 @@ public class BTCPayWebhookValidator {
      * Validates a webhook signature against a list of secrets (for zero-downtime rotation).
      * Returns true if the signature is valid for ANY of the provided secrets.
      *
+     * <p>Every secret in the list is evaluated on every call (no short-circuit), so the total
+     * wall-clock time does not leak which rotation slot holds the live secret.</p>
+     *
      * @param rawBody   the raw request body bytes
      * @param secrets   list of webhook secrets to try
      * @param sigHeader the value of the {@code BTCPay-Sig} header
@@ -64,11 +67,11 @@ public class BTCPayWebhookValidator {
         if (secrets == null || secrets.isEmpty()) {
             return false;
         }
+        boolean valid = false;
         for (String secret : secrets) {
-            if (isValidSignature(rawBody, secret, sigHeader)) {
-                return true;
-            }
+            // Bitwise OR (not ||) so we evaluate every secret regardless of match order.
+            valid |= isValidSignature(rawBody, secret, sigHeader);
         }
-        return false;
+        return valid;
     }
 }
