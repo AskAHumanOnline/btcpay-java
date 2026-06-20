@@ -30,6 +30,7 @@ jobs:
           prompt: '/code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}'
 
   security-scan:
+    if: github.actor != 'renovate[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: read
