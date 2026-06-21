@@ -116,6 +116,42 @@ class BTCPayWebhookValidatorTest {
     }
 
     @Test
+    void listOverload_evaluatesAllSecrets_regardlessOfMatchPosition() throws Exception {
+        // Defense against timing-oracle: total work must not depend on which list index matches.
+        byte[] body = "{\"event\":\"paid\"}".getBytes(StandardCharsets.UTF_8);
+        String live = "live-secret";
+        String sig = computeHmac(live, body);
+
+        java.util.concurrent.atomic.AtomicInteger calls = new java.util.concurrent.atomic.AtomicInteger();
+        BTCPayWebhookValidator counting = new BTCPayWebhookValidator() {
+            @Override
+            public boolean isValidSignature(byte[] b, String s, String h) {
+                calls.incrementAndGet();
+                return super.isValidSignature(b, s, h);
+            }
+        };
+
+        // Match at index 0
+        calls.set(0);
+        assertThat(counting.isValidSignature(body, List.of(live, "old-1", "old-2"), sig)).isTrue();
+        int callsFirst = calls.get();
+
+        // Match at last index
+        calls.set(0);
+        assertThat(counting.isValidSignature(body, List.of("old-1", "old-2", live), sig)).isTrue();
+        int callsLast = calls.get();
+
+        // No match
+        calls.set(0);
+        assertThat(counting.isValidSignature(body, List.of("old-1", "old-2", "old-3"), sig)).isFalse();
+        int callsNone = calls.get();
+
+        assertThat(callsFirst).isEqualTo(3);
+        assertThat(callsLast).isEqualTo(3);
+        assertThat(callsNone).isEqualTo(3);
+    }
+
+    @Test
     void nullBody_returnsFalse_singleSecret() {
         // null rawBody triggers NullPointerException in Mac.doFinal — must be caught and return false
         assertThat(validator.isValidSignature(null, "secret", "sha256=abc")).isFalse();
