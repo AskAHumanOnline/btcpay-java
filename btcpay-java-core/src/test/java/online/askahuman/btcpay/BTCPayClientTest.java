@@ -377,4 +377,98 @@ class BTCPayClientTest {
         StoreInvoice invoice = client.createStoreInvoice(STORE_ID, request);
         assertThat(invoice.getId()).isEqualTo("abc");
     }
+
+    // -------------------------------------------------------------------------
+    // Path-segment validation (issue #3)
+    // -------------------------------------------------------------------------
+
+    @org.junit.jupiter.params.ParameterizedTest
+    @org.junit.jupiter.params.provider.ValueSource(strings = {
+            "",                                 // empty
+            "foo/bar",                          // raw separator
+            "..",                               // parent dir
+            "store/../other",                   // traversal
+            "store%2F..%2Fother",               // percent-encoded separator
+            "store id",                         // whitespace
+            "store?admin",                      // query injection
+            "store#frag"                        // fragment
+    })
+    void createStoreInvoice_rejectsInvalidStoreId(String badId) {
+        CreateInvoiceRequest request = new CreateInvoiceRequest();
+        request.setAmount(25);
+
+        assertThatThrownBy(() -> client.createStoreInvoice(badId, request))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("storeId");
+    }
+
+    @Test
+    void createStoreInvoice_rejectsNullStoreId() {
+        CreateInvoiceRequest request = new CreateInvoiceRequest();
+        request.setAmount(25);
+
+        assertThatThrownBy(() -> client.createStoreInvoice(null, request))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("storeId");
+    }
+
+    @Test
+    void getInvoicePaymentMethods_rejectsTraversalInInvoiceId() {
+        assertThatThrownBy(() -> client.getInvoicePaymentMethods(STORE_ID, "abc/../../admin"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("invoiceId");
+    }
+
+    @Test
+    void getInvoice_rejectsTraversalInInvoiceId() {
+        assertThatThrownBy(() -> client.getInvoice(STORE_ID, ".."))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("invoiceId");
+    }
+
+    @Test
+    void payLightningInvoice_rejectsTraversalInStoreId() {
+        assertThatThrownBy(() -> client.payLightningInvoice("store/../x", "lnbc..."))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("storeId");
+    }
+
+    @Test
+    void getLightningPayment_rejectsInvalidPaymentHash() {
+        assertThatThrownBy(() -> client.getLightningPayment(STORE_ID, "abc/../def"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("paymentHash");
+    }
+
+    @Test
+    void isConnected_rejectsTraversalInStoreId() {
+        assertThatThrownBy(() -> client.isConnected("../etc/passwd"))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("storeId");
+    }
+
+    @Test
+    void constructor_rejectsInvalidConfiguredStoreId() {
+        assertThatThrownBy(() -> new BTCPayClient(
+                "http://localhost:" + wireMock.getPort(), API_KEY, "store/../x", 3, 5))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("storeId");
+    }
+
+    @Test
+    void constructor_acceptsValidStoreIdCharacters() {
+        // alphanumeric, hyphen, and underscore are all legal in BTCPay identifiers
+        BTCPayClient ok = new BTCPayClient(
+                "http://localhost:" + wireMock.getPort(), API_KEY, "Store-1_abc", 3, 5);
+        assertThat(ok).isNotNull();
+    }
+
+    @Test
+    void validation_runsBeforeUrlConstruction_noHttpCall() {
+        // If validation rejects, no HTTP request must be sent.
+        wireMock.resetRequests();
+        assertThatThrownBy(() -> client.getInvoice("../bad", INVOICE_ID))
+                .isInstanceOf(IllegalArgumentException.class);
+        assertThat(wireMock.getAllServeEvents()).isEmpty();
+    }
 }
