@@ -128,6 +128,8 @@ Both beans are `@ConditionalOnMissingBean`, so you can provide your own if neede
 - API keys are **never logged**. All log statements redact the `Authorization` header value.
 - Webhook signature validation uses **constant-time comparison** (`MessageDigest.isEqual`) to prevent timing attacks.
 - Always pass the **raw request body bytes** to the webhook validator -- never re-serialize the parsed JSON.
+- `btcpay.api-key` is enforced as non-blank at application startup via Bean Validation. Missing credentials surface as a startup failure instead of a runtime 401.
+- **Spring Boot Actuator exposure:** `btcpay.api-key` and `btcpay.webhook-secret` are sensitive. Spring Boot 3.x sanitizes properties matching `password`, `secret`, `key`, `token`, etc. on the `/env` and `/configprops` endpoints by default, so both keys are redacted out of the box. If you customize `management.endpoint.env.show-values` / `show-keys` or supply a custom `SanitizingFunction`, make sure `btcpay.*` properties remain sanitized.
 
 ## License
 

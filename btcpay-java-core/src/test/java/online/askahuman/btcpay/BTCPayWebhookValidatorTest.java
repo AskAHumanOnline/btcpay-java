@@ -77,11 +77,18 @@ class BTCPayWebhookValidatorTest {
 
     @Test
     void emptySecret_handled() {
-        // Empty string secret causes IllegalArgumentException in SecretKeySpec,
-        // so the validator should return false gracefully (not throw)
+        // Empty secret short-circuits to false before SecretKeySpec is invoked.
         byte[] body = "test-body".getBytes(StandardCharsets.UTF_8);
 
         assertThat(validator.isValidSignature(body, "", "sha256=abc")).isFalse();
+    }
+
+    @Test
+    void nullSecret_returnsFalse() {
+        // Null secret short-circuits to false; no NPE swallowed inside the try block.
+        byte[] body = "test-body".getBytes(StandardCharsets.UTF_8);
+
+        assertThat(validator.isValidSignature(body, (String) null, "sha256=abc")).isFalse();
     }
 
     @Test

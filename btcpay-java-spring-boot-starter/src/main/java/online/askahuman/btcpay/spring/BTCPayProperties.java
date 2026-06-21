@@ -1,6 +1,8 @@
 package online.askahuman.btcpay.spring;
 
+import jakarta.validation.constraints.NotBlank;
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.validation.annotation.Validated;
 
 /**
  * Configuration properties for btcpay-java. Bind to {@code btcpay.*} in
@@ -18,6 +20,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * }</pre>
  */
 @ConfigurationProperties(prefix = "btcpay")
+@Validated
 public class BTCPayProperties {
 
     /**
@@ -27,7 +30,10 @@ public class BTCPayProperties {
 
     /**
      * BTCPay Server API key with createinvoice + viewinvoices + sendlightning permissions.
+     * Required: the application fails to start if blank, so misconfiguration surfaces at
+     * startup rather than on the first API call.
      */
+    @NotBlank
     private String apiKey;
 
     /**
