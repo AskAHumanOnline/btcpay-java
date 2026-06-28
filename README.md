@@ -26,7 +26,7 @@ Java library for the [BTCPay Server Greenfield API](https://docs.btcpayserver.or
 <dependency>
     <groupId>online.askahuman</groupId>
     <artifactId>btcpay-java-core</artifactId>
-    <version>0.2.4</version>
+    <version>0.2.5</version>
 </dependency>
 ```
 
@@ -36,7 +36,7 @@ Java library for the [BTCPay Server Greenfield API](https://docs.btcpayserver.or
 <dependency>
     <groupId>online.askahuman</groupId>
     <artifactId>btcpay-java-spring-boot-starter</artifactId>
-    <version>0.2.4</version>
+    <version>0.2.5</version>
 </dependency>
 ```
 
